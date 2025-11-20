@@ -245,7 +245,9 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        ("Cooper Hewitt", pick_cooperhewitt_tomato),
+        # Cooper Hewitt temporarily disabled due to API 403 errors
+        # TODO: Re-enable when API key/authentication issues resolved
+        # ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
     ]
