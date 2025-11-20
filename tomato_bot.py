@@ -10,13 +10,12 @@ import requests
 from atproto import Client
 from dotenv import load_dotenv
 
-COOPER_API_KEY = os.getenv("COOPER_API_KEY")
-
 load_dotenv()
 
 # --- Environment / Config ---
 BSKY_HANDLE = os.getenv("BSKY_HANDLE")
 BSKY_APP_PASSWORD = os.getenv("BSKY_APP_PASSWORD")
+COOPER_API_KEY = os.getenv("COOPER_API_KEY")
 
 # URLs for museum APIs
 MET_SEARCH_URL = "https://collectionapi.metmuseum.org/public/collection/v1/search"
@@ -172,45 +171,56 @@ def pick_cma_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
 
 def pick_cooperhewitt_tomato(seen_ids):
     """
-    Uses Cooper Hewitt’s public JSON search (same used by the website).
+    Uses Cooper Hewitt's official REST API with proper authentication.
+    API Docs: https://collection.cooperhewitt.org/api/methods/cooperhewitt.search.objects
     """
-    url = "https://collection.cooperhewitt.org/search/"
-    params = {
-        "q": "tomato",
-        "format": "json",
-        "with_images": "1",
-    }
-
-    print("Requesting Cooper Hewitt WEBSITE JSON search for tomato…")
-    r = requests.get(url, params=params, timeout=30)
-
-    try:
-        data = r.json()
-    except Exception:
-        print("Cooper Hewitt returned non-JSON:", r.text[:200])
+    if not COOPER_API_KEY:
+        print("Cooper Hewitt API key not found in environment")
         return None
 
-    # Correct key: "objects"
-    objs = data.get("objects", [])
-    if not objs:
+    # Search for tomato objects with images
+    search_url = "https://api.collection.cooperhewitt.org/rest/"
+    search_params = {
+        "method": "cooperhewitt.search.objects",
+        "access_token": COOPER_API_KEY,
+        "query": "tomato",
+        "has_images": "1",
+        "per_page": "100",
+        "page": "1"
+    }
+
+    print("Requesting Cooper Hewitt API search for tomato…")
+    try:
+        r = requests.get(search_url, params=search_params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"Cooper Hewitt API error: {e}")
+        return None
+
+    # Get objects from the results
+    objects = data.get("objects", [])
+    if not objects:
         print("No Cooper Hewitt objects found.")
         return None
 
-    random.shuffle(objs)
+    random.shuffle(objects)
 
-    for obj in objs:
+    for obj in objects:
         oid = str(obj.get("id"))
         key = f"cooper:{oid}"
 
         if key in seen_ids:
             continue
 
+        # Get images from the object
         images = obj.get("images") or []
         if not images:
             continue
 
         img_data = images[0]
 
+        # Try different image sizes (b = large, z = medium, n = small)
         img_url = (
             img_data.get("b", {}).get("url") or
             img_data.get("z", {}).get("url") or
@@ -219,17 +229,20 @@ def pick_cooperhewitt_tomato(seen_ids):
         if not img_url:
             continue
 
+        # Build caption from object metadata
         title = obj.get("title", "Untitled")
         date = obj.get("date", "")
         desc = obj.get("description", "")
 
         lines = [title]
-        if date: lines.append(date)
-        if desc: lines.append(desc)
+        if date:
+            lines.append(date)
+        if desc and len(desc) < 200:  # Only include short descriptions
+            lines.append(desc)
         lines.append("Source: Cooper Hewitt Smithsonian Design Museum")
 
-        caption = add_hashtags("\n".join(lines))
-        print("  → Selected Cooper Hewitt tomato")
+        caption = "\n".join(lines)
+        print(f"  → Selected Cooper Hewitt object {oid}")
         return caption, img_url, key
 
     print("No suitable Cooper Hewitt item found.")
@@ -245,9 +258,7 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # Cooper Hewitt temporarily disabled due to API 403 errors
-        # TODO: Re-enable when API key/authentication issues resolved
-        # ("Cooper Hewitt", pick_cooperhewitt_tomato),
+        ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
     ]
