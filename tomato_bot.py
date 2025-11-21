@@ -401,18 +401,26 @@ def pick_artic_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
             print(f"  → Skipping {oid}: {e}")
             continue
 
+        title = artwork.get("title", "Untitled")
+        is_pd = artwork.get("is_public_domain")
+        has_image = bool(artwork.get("image_id"))
+
+        print(f"  Title: {title[:50]}")
+        print(f"  Public domain: {is_pd}, Has image: {has_image}")
+
         # Must be public domain and have an image
-        if not artwork.get("is_public_domain"):
+        if not is_pd:
+            print(f"  → Skipping {oid}: not public domain")
             continue
 
         image_id = artwork.get("image_id")
         if not image_id:
+            print(f"  → Skipping {oid}: no image")
             continue
 
         # Construct IIIF image URL (full quality, max 843px width)
         img_url = f"{ARTIC_IMAGE_BASE}/{image_id}/full/843,/0/default.jpg"
 
-        title = artwork.get("title", "Untitled")
         artist = artwork.get("artist_display", "")
         date = artwork.get("date_display", "")
         credit = artwork.get("credit_line", "")
