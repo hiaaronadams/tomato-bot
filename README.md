@@ -33,7 +33,9 @@ RIJKS_API_KEY=your-rijksmuseum-key  # Optional
 ### Getting API Keys
 
 **Cooper Hewitt:** https://collection.cooperhewitt.org/api/
-Select "read" permission when creating your token.
+- Select "read" permission when creating your token
+- **Note:** API keys expire periodically - regenerate when needed
+- Bot will skip Cooper Hewitt and use other sources if key is expired
 
 **Rijksmuseum (Optional):** https://data.rijksmuseum.nl/
 Free registration required.
