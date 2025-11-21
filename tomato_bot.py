@@ -570,6 +570,16 @@ def pick_loc_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         if not img_url:
             continue
 
+        # Skip placeholder SVGs and non-image files
+        if (img_url.endswith('.svg') or
+            '/original-format/' in img_url or
+            '/static/images/' in img_url):
+            continue
+
+        # Only accept JPEG/PNG images
+        if not any(ext in img_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']):
+            continue
+
         # LOC uses IIIF - convert to full or larger size
         # tile.loc.gov URLs: change /pct:25/ to /pct:100/ or /full/
         # Or change /512,/ to /2048,/ for larger dimensions
