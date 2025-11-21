@@ -20,6 +20,7 @@ load_dotenv()
 BSKY_HANDLE = os.getenv("BSKY_HANDLE")
 BSKY_APP_PASSWORD = os.getenv("BSKY_APP_PASSWORD")
 COOPER_API_KEY = os.getenv("COOPER_API_KEY")
+HARVARD_API_KEY = os.getenv("HARVARD_API_KEY")
 
 # URLs for museum APIs
 MET_SEARCH_URL = "https://collectionapi.metmuseum.org/public/collection/v1/search"
@@ -31,6 +32,7 @@ RIJKS_SEARCH_URL = "https://www.rijksmuseum.nl/api/en/collection"
 LOC_SEARCH_URL = "https://www.loc.gov/search/"
 NGA_SEARCH_URL = "https://api.nga.gov/search"
 NGA_ART_URL = "https://api.nga.gov/art"
+HARVARD_SEARCH_URL = "https://api.harvardartmuseums.org/object"
 
 # Cooper Hewitt website search JSON endpoint
 CH_SEARCH_URL = "https://collection.cooperhewitt.org/search/objects/"  # but DO add &format=json in params.
@@ -615,6 +617,84 @@ def pick_loc_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     print("No usable Library of Congress tomato found.")
     return None
 
+def pick_harvard_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    Harvard Art Museums - requires free API key
+    API Docs: https://github.com/harvardartmuseums/api-docs
+    """
+    if not HARVARD_API_KEY:
+        print("Harvard API key not found (set HARVARD_API_KEY in .env)")
+        return None
+
+    print("Requesting Harvard Art Museums search for tomato...")
+
+    params = {
+        "q": "tomato",
+        "apikey": HARVARD_API_KEY,
+        "hasimage": 1,
+        "size": 40,
+        "sort": "random"
+    }
+
+    try:
+        r = requests.get(HARVARD_SEARCH_URL, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"Harvard API error: {e}")
+        return None
+
+    records = data.get("records", [])
+    print(f"Found {len(records)} tomato artworks from Harvard")
+
+    if not records:
+        return None
+
+    for obj in records:
+        oid = str(obj.get("objectid"))
+        key = f"harvard:{oid}"
+
+        if key in seen:
+            continue
+
+        # Check image permission level (0 = most permissive)
+        if obj.get("imagepermissionlevel") not in [0, None]:
+            print(f"  → Skipping {oid}: restricted image permissions")
+            continue
+
+        # Get IIIF image URL for high quality
+        iiif_base = obj.get("iiifbaseuri")
+        if iiif_base:
+            # Use IIIF for max resolution
+            img_url = f"{iiif_base}/full/max/0/default.jpg"
+        else:
+            img_url = obj.get("primaryimageurl")
+
+        if not img_url:
+            continue
+
+        # Build caption
+        title = obj.get("title", "Untitled")
+        artist = obj.get("people")
+        if artist and isinstance(artist, list) and len(artist) > 0:
+            artist = artist[0].get("name", "")
+        else:
+            artist = ""
+
+        date = obj.get("dated", "")
+
+        lines = [title]
+        if artist: lines.append(artist)
+        if date: lines.append(date)
+        lines.append("Source: Harvard Art Museums")
+
+        caption = "\n".join(lines)
+        print(f"  → Selected Harvard object {oid}")
+        return caption, img_url, key
+
+    print("No suitable Harvard tomato item found.")
+    return None
+
 def pick_nga_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     """
     National Gallery of Art - all CC0 public domain!
@@ -709,6 +789,8 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
+        # TESTING NEW SOURCE - Harvard Art Museums
+        ("Harvard Art Museums", pick_harvard_tomato),
         # WORKING SOURCES
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
@@ -720,7 +802,7 @@ def main():
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
 
-    random.shuffle(pickers)
+    # random.shuffle(pickers)  # DISABLED FOR TESTING HARVARD
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
