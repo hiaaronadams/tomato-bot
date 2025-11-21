@@ -561,9 +561,32 @@ def pick_loc_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
             continue
 
         # Get image URL - LOC provides multiple sizes
-        img_url = item.get("image_url", [])
-        if isinstance(img_url, list) and img_url:
-            img_url = img_url[0]  # Take first image
+        # Try to get higher resolution image from resources or original_format
+        img_url = None
+
+        # First try resources array for full/large images
+        resources = item.get("resources", [])
+        if resources:
+            for resource in resources:
+                # Look for JPEG or image files
+                if resource.get("files"):
+                    for file_info in resource.get("files", []):
+                        url = file_info.get("url", "")
+                        if url and (".jpg" in url.lower() or ".jpeg" in url.lower()):
+                            img_url = url
+                            break
+                if img_url:
+                    break
+
+        # Fallback to image_url but try to get larger size
+        if not img_url:
+            img_url = item.get("image_url", [])
+            if isinstance(img_url, list) and img_url:
+                img_url = img_url[0]
+                # LOC uses size parameter in URLs - try to get larger size
+                # Change size=800 or similar to size=1024 or full
+                if "size=" in img_url:
+                    img_url = re.sub(r'size=\d+', 'size=1024', img_url)
 
         if not img_url:
             continue
