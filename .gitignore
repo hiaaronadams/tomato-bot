@@ -12,3 +12,5 @@ build/
 venv/
 test_*.py
 debug_*.py
+.env
+posted_ids.json
