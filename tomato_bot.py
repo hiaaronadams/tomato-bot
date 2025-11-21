@@ -162,10 +162,12 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
             raise
         obj = r2.json()
 
-        # Validate it's actually tomato-related
-        if not is_tomato_related(obj, debug=True):
-            print(f"  → Skipping {oid}: not tomato-related")
-            continue
+        # Skip validation for Met - their search returns tomato items but "tomato"
+        # appears in hidden metadata fields (descriptions, curator notes, etc.) that
+        # aren't returned by the API. Trust their search results.
+        # if not is_tomato_related(obj, debug=True):
+        #     print(f"  → Skipping {oid}: not tomato-related")
+        #     continue
 
         if not obj.get("isPublicDomain"):
             continue
