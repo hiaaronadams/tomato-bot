@@ -28,6 +28,7 @@ CMA_SEARCH_URL = "https://openaccess-api.clevelandart.org/api/artworks"
 ARTIC_SEARCH_URL = "https://api.artic.edu/api/v1/artworks/search"
 ARTIC_IMAGE_BASE = "https://www.artic.edu/iiif/2"
 RIJKS_SEARCH_URL = "https://www.rijksmuseum.nl/api/en/collection"
+LOC_SEARCH_URL = "https://www.loc.gov/search/"
 
 # Cooper Hewitt website search JSON endpoint
 CH_SEARCH_URL = "https://collection.cooperhewitt.org/search/objects/"  # but DO add &format=json in params.
@@ -504,6 +505,89 @@ def pick_rijks_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     print("No usable Rijksmuseum tomato found.")
     return None
 
+def pick_loc_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    Library of Congress - all public domain!
+    API Docs: https://www.loc.gov/apis/
+    """
+    print("Requesting Library of Congress search for tomato...")
+
+    params = {
+        "q": "tomato",
+        "fo": "json",  # Format: JSON
+        "at": "results",  # API type
+        "c": 50,  # Count
+        "sp": 1  # Start page
+    }
+
+    try:
+        r = requests.get(LOC_SEARCH_URL, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"Library of Congress API error: {e}")
+        return None
+
+    results = data.get("results", [])
+    print(f"Found {len(results)} items from Library of Congress")
+
+    if not results:
+        return None
+
+    # Filter to only items with images
+    items_with_images = [r for r in results if r.get("image_url")]
+    print(f"  {len(items_with_images)} have images")
+
+    if not items_with_images:
+        return None
+
+    random.shuffle(items_with_images)
+
+    for item in items_with_images:
+        # Generate unique ID from the item's URL or ID
+        item_url = item.get("url", "")
+        item_id = item.get("id", "")
+        if not item_id and item_url:
+            # Extract ID from URL if possible
+            match = re.search(r'/(\d+)/?$', item_url)
+            if match:
+                item_id = match.group(1)
+
+        if not item_id:
+            continue
+
+        key = f"loc:{item_id}"
+        if key in seen:
+            continue
+
+        # Get image URL - LOC provides multiple sizes
+        img_url = item.get("image_url", [])
+        if isinstance(img_url, list) and img_url:
+            img_url = img_url[0]  # Take first image
+
+        if not img_url:
+            continue
+
+        title = item.get("title", "Untitled")
+        date = item.get("date", "")
+        creator = ""
+        if item.get("contributor"):
+            creators = item.get("contributor", [])
+            if isinstance(creators, list) and creators:
+                creator = creators[0]
+
+        lines = [title]
+        if creator: lines.append(creator)
+        if date: lines.append(date)
+        lines.append("Source: Library of Congress (Public Domain)")
+
+        caption = "\n".join(lines)
+        print(f"  → Selected LOC item {item_id}")
+        return caption, img_url, key
+
+    print("No usable Library of Congress tomato found.")
+    return None
+
 
 # --------------------------------------------------
 # MAIN
@@ -513,7 +597,9 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # WORKING SOURCES (randomized for production)
+        # TESTING - Library of Congress (all public domain!)
+        ("Library of Congress", pick_loc_tomato),
+        # WORKING SOURCES
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
@@ -521,7 +607,7 @@ def main():
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
 
-    random.shuffle(pickers)
+    # random.shuffle(pickers)  # Disabled for testing - LOC first
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
