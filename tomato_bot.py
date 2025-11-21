@@ -192,6 +192,9 @@ def pick_cooperhewitt_tomato(seen_ids):
     print("Requesting Cooper Hewitt API search for tomato…")
     try:
         r = requests.get(search_url, params=search_params, timeout=30)
+        if r.status_code != 200:
+            print(f"Cooper Hewitt API returned {r.status_code}")
+            print(f"Response: {r.text[:500]}")
         r.raise_for_status()
         data = r.json()
     except Exception as e:
