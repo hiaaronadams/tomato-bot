@@ -566,15 +566,17 @@ def pick_loc_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
 
         # First try resources array for full/large images
         resources = item.get("resources", [])
-        if resources:
+        if resources and isinstance(resources, list):
             for resource in resources:
                 # Look for JPEG or image files
-                if resource.get("files"):
-                    for file_info in resource.get("files", []):
-                        url = file_info.get("url", "")
-                        if url and (".jpg" in url.lower() or ".jpeg" in url.lower()):
-                            img_url = url
-                            break
+                files = resource.get("files", [])
+                if files and isinstance(files, list):
+                    for file_info in files:
+                        if isinstance(file_info, dict):
+                            url = file_info.get("url", "")
+                            if url and (".jpg" in url.lower() or ".jpeg" in url.lower()):
+                                img_url = url
+                                break
                 if img_url:
                     break
 
