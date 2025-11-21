@@ -29,6 +29,8 @@ ARTIC_SEARCH_URL = "https://api.artic.edu/api/v1/artworks/search"
 ARTIC_IMAGE_BASE = "https://www.artic.edu/iiif/2"
 RIJKS_SEARCH_URL = "https://www.rijksmuseum.nl/api/en/collection"
 LOC_SEARCH_URL = "https://www.loc.gov/search/"
+NGA_SEARCH_URL = "https://api.nga.gov/search"
+NGA_ART_URL = "https://api.nga.gov/art"
 
 # Cooper Hewitt website search JSON endpoint
 CH_SEARCH_URL = "https://collection.cooperhewitt.org/search/objects/"  # but DO add &format=json in params.
@@ -612,6 +614,90 @@ def pick_loc_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     print("No usable Library of Congress tomato found.")
     return None
 
+def pick_nga_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    National Gallery of Art - all CC0 public domain!
+    API Docs: https://github.com/NationalGalleryOfArt/opendata
+    """
+    print("Requesting National Gallery of Art search for tomato...")
+
+    params = {
+        "q": "tomato",
+        "size": 50
+    }
+
+    try:
+        r = requests.get(NGA_SEARCH_URL, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"National Gallery of Art API error: {e}")
+        return None
+
+    results = data.get("results", [])
+    print(f"Found {len(results)} items from National Gallery of Art")
+
+    if not results:
+        return None
+
+    random.shuffle(results)
+
+    for item in results:
+        # Get the object ID
+        obj_id = item.get("id")
+        if not obj_id:
+            continue
+
+        key = f"nga:{obj_id}"
+        if key in seen:
+            continue
+
+        # Fetch full object details
+        try:
+            r2 = requests.get(f"{NGA_ART_URL}/{obj_id}", timeout=30)
+            r2.raise_for_status()
+            obj = r2.json()
+        except Exception as e:
+            print(f"  → Skipping {obj_id}: {e}")
+            continue
+
+        # Check for image
+        img_url = None
+        if obj.get("iiifthumburl"):
+            # Use IIIF for better quality - convert thumbnail to full size
+            thumb_url = obj.get("iiifthumburl")
+            # NGA IIIF URLs typically end with /full/!200,200/0/default.jpg
+            # Change to larger size like /full/2048,/0/default.jpg
+            img_url = re.sub(r'/full/[^/]+/', '/full/2048,/', thumb_url)
+        elif obj.get("imageurls"):
+            # Fallback to regular image URLs
+            imgs = obj.get("imageurls", [])
+            if imgs:
+                img_url = imgs[0]
+
+        if not img_url:
+            continue
+
+        # Build caption
+        title = obj.get("title", "Untitled")
+        artist = ""
+        if obj.get("attribution"):
+            artist = obj.get("attribution")
+
+        date = obj.get("displaydate", "")
+
+        lines = [title]
+        if artist: lines.append(artist)
+        if date: lines.append(date)
+        lines.append("Source: National Gallery of Art (CC0)")
+
+        caption = "\n".join(lines)
+        print(f"  → Selected NGA object {obj_id}")
+        return caption, img_url, key
+
+    print("No usable National Gallery of Art tomato found.")
+    return None
+
 
 # --------------------------------------------------
 # MAIN
@@ -621,6 +707,8 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
+        # TESTING NEW SOURCE - National Gallery of Art
+        ("National Gallery of Art", pick_nga_tomato),
         # WORKING SOURCES
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
@@ -630,7 +718,7 @@ def main():
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
 
-    random.shuffle(pickers)
+    # random.shuffle(pickers)  # DISABLED FOR TESTING NGA
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
