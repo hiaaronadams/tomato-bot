@@ -4,6 +4,7 @@ import os
 import json
 import random
 import textwrap
+import re
 from typing import Optional, Tuple, Set
 from io import BytesIO
 
@@ -11,6 +12,7 @@ import requests
 from atproto import Client
 from dotenv import load_dotenv
 from PIL import Image
+from bs4 import BeautifulSoup
 
 load_dotenv()
 
@@ -136,22 +138,53 @@ def is_tomato_related(obj: dict, debug: bool = False) -> bool:
     return "tomato" in combined
 
 def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
-    params = {
-        "q": "tomato",
-        "hasImages": "true",
+    """
+    Scrape Met website search results since their API search is broken.
+    Website search: https://www.metmuseum.org/art/collection/search?showOnly=withImage&q=tomato
+    """
+    print("Scraping Met website search for tomato...")
+
+    # Scrape the Met website search page
+    search_url = "https://www.metmuseum.org/art/collection/search"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
-    print("Requesting Met search with params:", params)
-    r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    ids = data.get("objectIDs") or []
-    print(f"Met search returned {len(ids)} IDs")
-    random.shuffle(ids)
-    for oid in ids:
+
+    try:
+        r = requests.get(search_url, params={'showOnly': 'withImage', 'q': 'tomato'},
+                        headers=headers, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"Failed to scrape Met website: {e}")
+        return None
+
+    # Parse HTML and extract object IDs
+    soup = BeautifulSoup(r.text, 'html.parser')
+
+    # Look for object IDs in links like /art/collection/search/12345
+    object_ids = []
+    for link in soup.find_all('a', href=True):
+        match = re.search(r'/art/collection/search/(\d+)', link['href'])
+        if match:
+            object_ids.append(match.group(1))
+
+    # Remove duplicates
+    object_ids = list(set(object_ids))
+    print(f"Found {len(object_ids)} tomato items from Met website")
+
+    if not object_ids:
+        print("No Met objects found via scraping")
+        return None
+
+    random.shuffle(object_ids)
+
+    # Try each object until we find a usable one
+    for oid in object_ids:
         key = f"met:{oid}"
         if key in seen:
             continue
-        print("Considering Met object:", oid)
+
+        print(f"Considering Met object: {oid}")
         try:
             r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
             r2.raise_for_status()
@@ -160,32 +193,30 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
                 print(f"  → Skipping {oid}: object not found")
                 continue
             raise
-        obj = r2.json()
 
-        # Skip validation for Met - their search returns tomato items but "tomato"
-        # appears in hidden metadata fields (descriptions, curator notes, etc.) that
-        # aren't returned by the API. Trust their search results.
-        # if not is_tomato_related(obj, debug=True):
-        #     print(f"  → Skipping {oid}: not tomato-related")
-        #     continue
+        obj = r2.json()
 
         if not obj.get("isPublicDomain"):
             continue
         img = obj.get("primaryImageSmall") or obj.get("primaryImage")
         if not img:
             continue
+
         title = obj.get("title", "Untitled")
-        artist = obj.get("artistDisplayName","")
-        date = obj.get("objectDate","")
-        credit = obj.get("creditLine","")
-        dept = obj.get("department","")
-        lines=[title]
+        artist = obj.get("artistDisplayName", "")
+        date = obj.get("objectDate", "")
+        credit = obj.get("creditLine", "")
+        dept = obj.get("department", "")
+
+        lines = [title]
         if artist: lines.append(artist)
         if date: lines.append(date)
         if credit: lines.append(credit)
         if dept: lines.append(f"Source: {dept}, The Met Open Access")
+
         caption = "\n".join(lines)
         return caption, img, key
+
     print("No usable Met tomato found.")
     return None
 
