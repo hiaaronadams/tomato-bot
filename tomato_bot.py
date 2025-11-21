@@ -560,38 +560,27 @@ def pick_loc_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         if key in seen:
             continue
 
-        # Get image URL - LOC provides multiple sizes
-        # Try to get higher resolution image from resources or original_format
-        img_url = None
-
-        # First try resources array for full/large images
-        resources = item.get("resources", [])
-        if resources and isinstance(resources, list):
-            for resource in resources:
-                # Look for JPEG or image files
-                files = resource.get("files", [])
-                if files and isinstance(files, list):
-                    for file_info in files:
-                        if isinstance(file_info, dict):
-                            url = file_info.get("url", "")
-                            if url and (".jpg" in url.lower() or ".jpeg" in url.lower()):
-                                img_url = url
-                                break
-                if img_url:
-                    break
-
-        # Fallback to image_url but try to get larger size
-        if not img_url:
-            img_url = item.get("image_url", [])
-            if isinstance(img_url, list) and img_url:
-                img_url = img_url[0]
-                # LOC uses size parameter in URLs - try to get larger size
-                # Change size=800 or similar to size=1024 or full
-                if "size=" in img_url:
-                    img_url = re.sub(r'size=\d+', 'size=1024', img_url)
+        # Get image URL - upgrade to larger size
+        img_url = item.get("image_url", [])
+        if isinstance(img_url, list) and img_url:
+            img_url = img_url[0]
+        elif not img_url:
+            img_url = None
 
         if not img_url:
             continue
+
+        # LOC uses IIIF - convert to full or larger size
+        # tile.loc.gov URLs: change /pct:25/ to /pct:100/ or /full/
+        # Or change /512,/ to /2048,/ for larger dimensions
+        if "tile.loc.gov" in img_url:
+            # Replace small percentages with full size
+            img_url = re.sub(r'/pct:\d+/', '/pct:100/', img_url)
+            # Or replace pixel dimensions with larger size
+            img_url = re.sub(r'/\d+,/', '/2048,/', img_url)
+        # For other LOC image servers, try to upgrade size parameter
+        elif "size=" in img_url:
+            img_url = re.sub(r'size=\d+', 'size=2048', img_url)
 
         title = item.get("title", "Untitled")
         date = item.get("date", "")
