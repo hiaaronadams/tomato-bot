@@ -33,6 +33,8 @@ LOC_SEARCH_URL = "https://www.loc.gov/search/"
 NGA_SEARCH_URL = "https://api.nga.gov/search"
 NGA_ART_URL = "https://api.nga.gov/art"
 HARVARD_SEARCH_URL = "https://api.harvardartmuseums.org/object"
+WHITNEY_API_URL = "https://whitney.org/api/artworks"
+WHITNEY_COLLECTION_URL = "https://whitney.org/collection/works"
 
 # Cooper Hewitt website search JSON endpoint
 CH_SEARCH_URL = "https://collection.cooperhewitt.org/search/objects/"  # but DO add &format=json in params.
@@ -695,6 +697,109 @@ def pick_harvard_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     print("No suitable Harvard tomato item found.")
     return None
 
+def pick_whitney_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    Whitney Museum of American Art - free API, no auth required
+    API Docs: https://whitney.org/about/website/api
+    Images not in API, need to scrape collection pages
+    """
+    print("Requesting Whitney Museum search for tomato...")
+
+    params = {
+        "q[title_cont]": "tomato"
+    }
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+
+    try:
+        r = requests.get(WHITNEY_API_URL, params=params, headers=headers, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"Whitney API error: {e}")
+        return None
+
+    artworks = data.get("data", [])
+    print(f"Found {len(artworks)} tomato artworks from Whitney")
+
+    if not artworks:
+        return None
+
+    random.shuffle(artworks)
+
+    for artwork in artworks:
+        # Get the TMS ID (used in collection URLs)
+        tms_id = artwork.get("attributes", {}).get("tms_id")
+        if not tms_id:
+            tms_id = artwork.get("id")
+
+        if not tms_id:
+            continue
+
+        key = f"whitney:{tms_id}"
+        if key in seen:
+            continue
+
+        print(f"Considering Whitney artwork: {tms_id}")
+
+        # Get title, artist, date from API
+        attrs = artwork.get("attributes", {})
+        title = attrs.get("title", "Untitled")
+        artist = attrs.get("artist_name", "")
+        date = attrs.get("date_display", "")
+
+        # Scrape the collection page to get image URL
+        collection_url = f"{WHITNEY_COLLECTION_URL}/{tms_id}"
+
+        try:
+            r2 = requests.get(collection_url, headers=headers, timeout=30)
+            r2.raise_for_status()
+            soup = BeautifulSoup(r2.text, 'html.parser')
+
+            # Look for image in various possible locations
+            img_url = None
+
+            # Try to find main artwork image
+            img_tag = soup.find('img', class_='artwork-image')
+            if not img_tag:
+                img_tag = soup.find('img', {'data-src': True})
+            if not img_tag:
+                # Look for any image with "artwork" in the src
+                for img in soup.find_all('img'):
+                    src = img.get('src') or img.get('data-src')
+                    if src and 'artwork' in src.lower():
+                        img_url = src
+                        break
+            else:
+                img_url = img_tag.get('src') or img_tag.get('data-src')
+
+            # Make sure URL is absolute
+            if img_url and not img_url.startswith('http'):
+                img_url = f"https://whitney.org{img_url}"
+
+            if not img_url:
+                print(f"  → Skipping {tms_id}: no image found")
+                continue
+
+        except Exception as e:
+            print(f"  → Skipping {tms_id}: error fetching page - {e}")
+            continue
+
+        # Build caption
+        lines = [title]
+        if artist: lines.append(artist)
+        if date: lines.append(date)
+        lines.append("Source: Whitney Museum of American Art")
+
+        caption = "\n".join(lines)
+        print(f"  → Selected Whitney artwork {tms_id}")
+        return caption, img_url, key
+
+    print("No suitable Whitney tomato item found.")
+    return None
+
 def pick_nga_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     """
     National Gallery of Art - all CC0 public domain!
@@ -789,9 +894,10 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # TESTING NEW SOURCE - Harvard Art Museums
-        ("Harvard Art Museums", pick_harvard_tomato),
+        # TESTING NEW SOURCE - Whitney Museum
+        ("Whitney Museum", pick_whitney_tomato),
         # WORKING SOURCES
+        ("Harvard Art Museums", pick_harvard_tomato),
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
@@ -802,7 +908,7 @@ def main():
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
 
-    # random.shuffle(pickers)  # DISABLED FOR TESTING HARVARD
+    # random.shuffle(pickers)  # DISABLED FOR TESTING WHITNEY
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
