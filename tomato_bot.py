@@ -481,16 +481,16 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # NEW SOURCE - testing Art Institute of Chicago first
-        ("Art Institute of Chicago", pick_artic_tomato),
-        # Other sources
+        # WORKING SOURCES ONLY
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
-        ("Rijksmuseum", pick_rijks_tomato),
+        # DISABLED - search returns non-tomato items like Met's broken API
+        # ("Art Institute of Chicago", pick_artic_tomato),
+        # ("Rijksmuseum", pick_rijks_tomato),  # Needs API key
     ]
 
-    # random.shuffle(pickers)  # Disabled for testing - Art Institute will run first
+    random.shuffle(pickers)
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
