@@ -621,17 +621,17 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # TESTING - Library of Congress (all public domain!)
-        ("Library of Congress", pick_loc_tomato),
-        # WORKING SOURCES
+        # WORKING SOURCES - all return high quality images
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
+        # DISABLED - images too low resolution
+        # ("Library of Congress", pick_loc_tomato),
         # DISABLED - has 3 tomato items but all copyrighted, not public domain
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
 
-    # random.shuffle(pickers)  # Disabled for testing - LOC first
+    random.shuffle(pickers)
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
