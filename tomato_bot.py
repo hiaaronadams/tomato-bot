@@ -343,38 +343,62 @@ def pick_cooperhewitt_tomato(seen_ids):
 
 def pick_artic_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     """
-    Art Institute of Chicago API - no key required!
-    API Docs: https://api.artic.edu/docs/
+    Art Institute of Chicago - scrape website search since API is broken
+    Website search: https://www.artic.edu/collection?q="tomato"
     """
-    print("Requesting Art Institute of Chicago search for tomato...")
+    print("Scraping Art Institute website search for tomato...")
 
-    params = {
-        "q": "tomato",
-        "limit": 40,
-        "fields": "id,title,artist_display,date_display,image_id,is_public_domain,credit_line"
+    # Scrape the Art Institute website search page with quoted search
+    search_url = "https://www.artic.edu/collection"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
 
     try:
-        r = requests.get(ARTIC_SEARCH_URL, params=params, timeout=30)
+        r = requests.get(search_url, params={'q': '"tomato"'},
+                        headers=headers, timeout=30)
         r.raise_for_status()
-        data = r.json()
     except Exception as e:
-        print(f"Art Institute API error: {e}")
+        print(f"Failed to scrape Art Institute website: {e}")
         return None
 
-    artworks = data.get("data", [])
-    print(f"Found {len(artworks)} artworks from Art Institute of Chicago")
+    # Parse HTML and extract object IDs
+    soup = BeautifulSoup(r.text, 'html.parser')
 
-    if not artworks:
+    # Look for artwork links - they're usually /artworks/12345/title-slug
+    object_ids = []
+    for link in soup.find_all('a', href=True):
+        match = re.search(r'/artworks/(\d+)/', link['href'])
+        if match:
+            object_ids.append(match.group(1))
+
+    # Remove duplicates
+    object_ids = list(set(object_ids))
+    print(f"Found {len(object_ids)} tomato artworks from Art Institute website")
+
+    if not object_ids:
+        print("No Art Institute objects found via scraping")
         return None
 
-    random.shuffle(artworks)
+    random.shuffle(object_ids)
 
-    for artwork in artworks:
-        oid = str(artwork.get("id"))
+    # Try each object - now use their API to get details
+    for oid in object_ids:
         key = f"artic:{oid}"
-
         if key in seen:
+            continue
+
+        print(f"Considering Art Institute object: {oid}")
+        try:
+            # Use API to get object details
+            r2 = requests.get(f"https://api.artic.edu/api/v1/artworks/{oid}",
+                            params={'fields': 'id,title,artist_display,date_display,image_id,is_public_domain,credit_line'},
+                            timeout=30)
+            r2.raise_for_status()
+            data = r2.json()
+            artwork = data.get('data', {})
+        except Exception as e:
+            print(f"  → Skipping {oid}: {e}")
             continue
 
         # Must be public domain and have an image
@@ -481,16 +505,16 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # WORKING SOURCES ONLY
+        # TESTING - Art Institute with web scraping (quoted search)
+        ("Art Institute of Chicago", pick_artic_tomato),
+        # WORKING SOURCES
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
-        # DISABLED - search returns non-tomato items like Met's broken API
-        # ("Art Institute of Chicago", pick_artic_tomato),
         # ("Rijksmuseum", pick_rijks_tomato),  # Needs API key
     ]
 
-    random.shuffle(pickers)
+    # random.shuffle(pickers)  # Disabled for testing - Art Institute first
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
