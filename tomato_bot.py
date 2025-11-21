@@ -95,8 +95,6 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     params = {
         "q": "tomato",
         "hasImages": "true",
-        "title": "true",
-        "tags": "true",
     }
     print("Requesting Met search with params:", params)
     r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
