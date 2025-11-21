@@ -664,11 +664,12 @@ def pick_nga_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         # Check for image
         img_url = None
         if obj.get("iiifthumburl"):
-            # Use IIIF for better quality - convert thumbnail to full size
+            # Use IIIF for maximum quality
+            # IIIF structure: /{identifier}/{region}/{size}/{rotation}/{quality}.{format}
+            # Change size parameter to 'max' for highest resolution
             thumb_url = obj.get("iiifthumburl")
-            # NGA IIIF URLs typically end with /full/!200,200/0/default.jpg
-            # Change to larger size like /full/2048,/0/default.jpg
-            img_url = re.sub(r'/full/[^/]+/', '/full/2048,/', thumb_url)
+            # Replace size (e.g., !200,200) with 'max' to get full resolution
+            img_url = re.sub(r'/(full|square)/[^/]+/', r'/\1/max/', thumb_url)
         elif obj.get("imageurls"):
             # Fallback to regular image URLs
             imgs = obj.get("imageurls", [])
