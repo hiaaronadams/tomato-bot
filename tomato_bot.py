@@ -60,7 +60,8 @@ def add_hashtags(base_text: str) -> str:
     full = base + suffix
     if len(full) <= MAX_TEXT_LEN:
         return full
-    allowed = MAX_TEXT_LEN - len(suffix)
+    # Be more conservative - leave extra room for grapheme differences
+    allowed = MAX_TEXT_LEN - len(suffix) - 20
     if allowed <= 0:
         return suffix.strip()
     truncated = base[:allowed].rstrip() + "…"
@@ -708,18 +709,18 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # TESTING NEW SOURCE - National Gallery of Art
-        ("National Gallery of Art", pick_nga_tomato),
         # WORKING SOURCES
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
         ("Library of Congress", pick_loc_tomato),
+        # DISABLED - no search API available, only CSV download
+        # ("National Gallery of Art", pick_nga_tomato),
         # DISABLED - has 3 tomato items but all copyrighted, not public domain
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
 
-    # random.shuffle(pickers)  # DISABLED FOR TESTING NGA
+    random.shuffle(pickers)
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
