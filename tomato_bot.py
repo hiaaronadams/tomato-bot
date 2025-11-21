@@ -111,7 +111,7 @@ def post_to_bluesky(text: str, image_url: Optional[str]) -> None:
 
 # --- Museum pickers ---
 
-def is_tomato_related(obj: dict) -> bool:
+def is_tomato_related(obj: dict, debug: bool = False) -> bool:
     """Check if an object is actually tomato-related by checking relevant fields."""
     search_fields = [
         obj.get("title", ""),
@@ -128,6 +128,11 @@ def is_tomato_related(obj: dict) -> bool:
 
     # Combine all fields and search for tomato
     combined = " ".join(search_fields).lower()
+
+    if debug and "tomato" not in combined:
+        print(f"    DEBUG: Title={obj.get('title', 'N/A')[:50]}")
+        print(f"    DEBUG: Tags={[t.get('term') for t in tags[:3]]}")
+
     return "tomato" in combined
 
 def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
@@ -147,12 +152,18 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         if key in seen:
             continue
         print("Considering Met object:", oid)
-        r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
-        r2.raise_for_status()
+        try:
+            r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
+            r2.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                print(f"  → Skipping {oid}: object not found")
+                continue
+            raise
         obj = r2.json()
 
         # Validate it's actually tomato-related
-        if not is_tomato_related(obj):
+        if not is_tomato_related(obj, debug=True):
             print(f"  → Skipping {oid}: not tomato-related")
             continue
 
