@@ -5,6 +5,7 @@ A Bluesky bot that posts tomato-related artwork from various museum collections.
 ## Museum Sources
 
 ### Active Sources
+- **MoMA (Museum of Modern Art)** - No API key required (uses web scraping)
 - **Whitney Museum of American Art** - No API key required
 - **Harvard Art Museums** - Requires free API key
 - **Cooper Hewitt Smithsonian Design Museum** - Requires free API key

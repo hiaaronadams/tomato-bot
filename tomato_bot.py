@@ -35,6 +35,7 @@ NGA_ART_URL = "https://api.nga.gov/art"
 HARVARD_SEARCH_URL = "https://api.harvardartmuseums.org/object"
 WHITNEY_API_URL = "https://whitney.org/api/artworks"
 WHITNEY_COLLECTION_URL = "https://whitney.org/collection/works"
+MOMA_SEARCH_URL = "https://www.moma.org/collection/"
 
 # Cooper Hewitt website search JSON endpoint
 CH_SEARCH_URL = "https://collection.cooperhewitt.org/search/objects/"  # but DO add &format=json in params.
@@ -800,6 +801,109 @@ def pick_whitney_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     print("No suitable Whitney tomato item found.")
     return None
 
+def pick_moma_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    MoMA (Museum of Modern Art) - scrape collection search
+    No public API, images not open access but using for non-commercial educational purposes
+    """
+    print("Scraping MoMA collection search for tomato...")
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+
+    try:
+        r = requests.get(MOMA_SEARCH_URL, params={'q': 'tomato'}, headers=headers, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"Failed to scrape MoMA website: {e}")
+        return None
+
+    soup = BeautifulSoup(r.text, 'html.parser')
+
+    # Look for artwork links in the search results
+    # MoMA uses URLs like /collection/works/12345
+    object_ids = []
+    for link in soup.find_all('a', href=True):
+        match = re.search(r'/collection/works/(\d+)', link['href'])
+        if match:
+            object_ids.append(match.group(1))
+
+    # Remove duplicates
+    object_ids = list(set(object_ids))
+    print(f"Found {len(object_ids)} tomato artworks from MoMA website")
+
+    if not object_ids:
+        print("No MoMA objects found via scraping")
+        return None
+
+    random.shuffle(object_ids)
+
+    # Try each object until we find a usable one
+    for oid in object_ids:
+        key = f"moma:{oid}"
+        if key in seen:
+            continue
+
+        print(f"Considering MoMA artwork: {oid}")
+        try:
+            artwork_url = f"https://www.moma.org/collection/works/{oid}"
+            r2 = requests.get(artwork_url, headers=headers, timeout=30)
+            r2.raise_for_status()
+            soup2 = BeautifulSoup(r2.text, 'html.parser')
+        except Exception as e:
+            print(f"  → Skipping {oid}: {e}")
+            continue
+
+        # Extract image URL
+        img_url = None
+        # Try to find the main artwork image
+        img_tag = soup2.find('img', class_='work__image')
+        if not img_tag:
+            # Try Open Graph image
+            og_img = soup2.find('meta', property='og:image')
+            if og_img:
+                img_url = og_img.get('content')
+        else:
+            img_url = img_tag.get('src')
+
+        if not img_url:
+            print(f"  → Skipping {oid}: no image found")
+            continue
+
+        # Make sure URL is absolute
+        if img_url and not img_url.startswith('http'):
+            img_url = f"https://www.moma.org{img_url}"
+
+        # Extract metadata
+        title = "Untitled"
+        title_tag = soup2.find('h1', class_='work__title')
+        if title_tag:
+            title = title_tag.get_text(strip=True)
+
+        artist = ""
+        artist_tag = soup2.find('h2', class_='work__artist')
+        if artist_tag:
+            artist = artist_tag.get_text(strip=True)
+
+        date = ""
+        date_tag = soup2.find('h3', class_='work__date')
+        if date_tag:
+            date = date_tag.get_text(strip=True)
+
+        # Build caption
+        lines = [title]
+        if artist: lines.append(artist)
+        if date: lines.append(date)
+        lines.append("Source: The Museum of Modern Art")
+
+        caption = "\n".join(lines)
+        print(f"  → Selected MoMA artwork {oid}")
+        return caption, img_url, key
+
+    print("No usable MoMA tomato found.")
+    return None
+
 def pick_nga_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     """
     National Gallery of Art - all CC0 public domain!
@@ -894,9 +998,10 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # TESTING NEW SOURCE - Whitney Museum
-        ("Whitney Museum", pick_whitney_tomato),
+        # TESTING NEW SOURCE - MoMA
+        ("MoMA", pick_moma_tomato),
         # WORKING SOURCES
+        ("Whitney Museum", pick_whitney_tomato),
         ("Harvard Art Museums", pick_harvard_tomato),
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
@@ -908,7 +1013,7 @@ def main():
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
 
-    # random.shuffle(pickers)  # DISABLED FOR TESTING WHITNEY
+    # random.shuffle(pickers)  # DISABLED FOR TESTING MOMA
     for label, picker in pickers:
         print(f"\n=== Trying source: {label} ===")
         result = picker(seen)
