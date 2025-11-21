@@ -25,6 +25,9 @@ COOPER_API_KEY = os.getenv("COOPER_API_KEY")
 MET_SEARCH_URL = "https://collectionapi.metmuseum.org/public/collection/v1/search"
 MET_OBJECT_URL = "https://collectionapi.metmuseum.org/public/collection/v1/objects"
 CMA_SEARCH_URL = "https://openaccess-api.clevelandart.org/api/artworks"
+ARTIC_SEARCH_URL = "https://api.artic.edu/api/v1/artworks/search"
+ARTIC_IMAGE_BASE = "https://www.artic.edu/iiif/2"
+RIJKS_SEARCH_URL = "https://www.rijksmuseum.nl/api/en/collection"
 
 # Cooper Hewitt website search JSON endpoint
 CH_SEARCH_URL = "https://collection.cooperhewitt.org/search/objects/"  # but DO add &format=json in params.
@@ -338,6 +341,136 @@ def pick_cooperhewitt_tomato(seen_ids):
     print("No suitable Cooper Hewitt item found.")
     return None
 
+def pick_artic_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    Art Institute of Chicago API - no key required!
+    API Docs: https://api.artic.edu/docs/
+    """
+    print("Requesting Art Institute of Chicago search for tomato...")
+
+    params = {
+        "q": "tomato",
+        "limit": 40,
+        "fields": "id,title,artist_display,date_display,image_id,is_public_domain,credit_line"
+    }
+
+    try:
+        r = requests.get(ARTIC_SEARCH_URL, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"Art Institute API error: {e}")
+        return None
+
+    artworks = data.get("data", [])
+    print(f"Found {len(artworks)} artworks from Art Institute of Chicago")
+
+    if not artworks:
+        return None
+
+    random.shuffle(artworks)
+
+    for artwork in artworks:
+        oid = str(artwork.get("id"))
+        key = f"artic:{oid}"
+
+        if key in seen:
+            continue
+
+        # Must be public domain and have an image
+        if not artwork.get("is_public_domain"):
+            continue
+
+        image_id = artwork.get("image_id")
+        if not image_id:
+            continue
+
+        # Construct IIIF image URL (full quality, max 843px width)
+        img_url = f"{ARTIC_IMAGE_BASE}/{image_id}/full/843,/0/default.jpg"
+
+        title = artwork.get("title", "Untitled")
+        artist = artwork.get("artist_display", "")
+        date = artwork.get("date_display", "")
+        credit = artwork.get("credit_line", "")
+
+        lines = [title]
+        if artist: lines.append(artist)
+        if date: lines.append(date)
+        if credit: lines.append(credit)
+        lines.append("Source: Art Institute of Chicago (CC0)")
+
+        caption = "\n".join(lines)
+        print(f"  → Selected Art Institute object {oid}")
+        return caption, img_url, key
+
+    print("No usable Art Institute tomato found.")
+    return None
+
+def pick_rijks_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    Rijksmuseum API - requires API key but registration is free
+    API Docs: https://data.rijksmuseum.nl/
+    Note: Set RIJKS_API_KEY in .env if you want to use this source
+    """
+    api_key = os.getenv("RIJKS_API_KEY")
+
+    if not api_key:
+        print("Rijksmuseum API key not found (set RIJKS_API_KEY in .env)")
+        return None
+
+    print("Requesting Rijksmuseum search for tomato...")
+
+    params = {
+        "key": api_key,
+        "q": "tomato",
+        "imgonly": "true",
+        "ps": 40
+    }
+
+    try:
+        r = requests.get(RIJKS_SEARCH_URL, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"Rijksmuseum API error: {e}")
+        return None
+
+    artworks = data.get("artObjects", [])
+    print(f"Found {len(artworks)} artworks from Rijksmuseum")
+
+    if not artworks:
+        return None
+
+    random.shuffle(artworks)
+
+    for artwork in artworks:
+        oid = artwork.get("objectNumber", "")
+        key = f"rijks:{oid}"
+
+        if key in seen:
+            continue
+
+        # Check if it allows download (CC0/public domain)
+        if not artwork.get("permitDownload", False):
+            continue
+
+        img_url = artwork.get("webImage", {}).get("url")
+        if not img_url:
+            continue
+
+        title = artwork.get("title", "Untitled")
+        artist = artwork.get("principalOrFirstMaker", "")
+
+        lines = [title]
+        if artist: lines.append(artist)
+        lines.append("Source: Rijksmuseum (CC0)")
+
+        caption = "\n".join(lines)
+        print(f"  → Selected Rijksmuseum object {oid}")
+        return caption, img_url, key
+
+    print("No usable Rijksmuseum tomato found.")
+    return None
 
 
 # --------------------------------------------------
@@ -349,8 +482,10 @@ def main():
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
+        ("Art Institute of Chicago", pick_artic_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
+        ("Rijksmuseum", pick_rijks_tomato),
     ]
 
     random.shuffle(pickers)
