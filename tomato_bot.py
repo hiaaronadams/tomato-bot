@@ -5,10 +5,12 @@ import json
 import random
 import textwrap
 from typing import Optional, Tuple, Set
+from io import BytesIO
 
 import requests
 from atproto import Client
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 
@@ -69,7 +71,25 @@ def post_to_bluesky(text: str, image_url: Optional[str]) -> None:
         print("  → Downloading image:", image_url)
         r = requests.get(image_url, timeout=60)
         r.raise_for_status()
-        blob = client.upload_blob(r.content)
+        image_data = r.content
+
+        # Bluesky limit is ~976KB, resize if needed
+        MAX_SIZE = 950 * 1024  # 950KB to be safe
+        if len(image_data) > MAX_SIZE:
+            print(f"  → Image too large ({len(image_data)/1024:.0f}KB), resizing...")
+            img = Image.open(BytesIO(image_data))
+
+            # Resize to 80% of original dimensions
+            new_size = (int(img.width * 0.8), int(img.height * 0.8))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+            # Save as JPEG with quality adjustment
+            output = BytesIO()
+            img.convert('RGB').save(output, format='JPEG', quality=85, optimize=True)
+            image_data = output.getvalue()
+            print(f"  → Resized to {len(image_data)/1024:.0f}KB")
+
+        blob = client.upload_blob(image_data)
         embed = {
             "$type": "app.bsky.embed.images",
             "images": [
