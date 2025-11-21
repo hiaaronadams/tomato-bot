@@ -621,12 +621,11 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        # WORKING SOURCES - all return high quality images
+        # WORKING SOURCES
         ("Cooper Hewitt", pick_cooperhewitt_tomato),
         ("Cleveland Museum of Art", pick_cma_tomato),
         ("The Met", pick_met_tomato),
-        # DISABLED - images too low resolution
-        # ("Library of Congress", pick_loc_tomato),
+        ("Library of Congress", pick_loc_tomato),
         # DISABLED - has 3 tomato items but all copyrighted, not public domain
         # ("Art Institute of Chicago", pick_artic_tomato),
     ]
