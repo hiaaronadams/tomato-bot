@@ -91,6 +91,25 @@ def post_to_bluesky(text: str, image_url: Optional[str]) -> None:
 
 # --- Museum pickers ---
 
+def is_tomato_related(obj: dict) -> bool:
+    """Check if an object is actually tomato-related by checking relevant fields."""
+    search_fields = [
+        obj.get("title", ""),
+        obj.get("objectName", ""),
+        obj.get("medium", ""),
+        obj.get("culture", ""),
+        obj.get("classification", ""),
+    ]
+
+    # Check tags
+    tags = obj.get("tags") or []
+    for tag in tags:
+        search_fields.append(tag.get("term", ""))
+
+    # Combine all fields and search for tomato
+    combined = " ".join(search_fields).lower()
+    return "tomato" in combined
+
 def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     params = {
         "q": "tomato",
@@ -111,6 +130,12 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
         r2.raise_for_status()
         obj = r2.json()
+
+        # Validate it's actually tomato-related
+        if not is_tomato_related(obj):
+            print(f"  → Skipping {oid}: not tomato-related")
+            continue
+
         if not obj.get("isPublicDomain"):
             continue
         img = obj.get("primaryImageSmall") or obj.get("primaryImage")
