@@ -100,9 +100,13 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         "tags": "true",
     }
     print("Requesting Met search with params:", params)
-    r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
+    try:
+        r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"Met API error: {e}")
+        return None
     ids = data.get("objectIDs") or []
     print(f"Met search returned {len(ids)} IDs")
     random.shuffle(ids)
@@ -142,9 +146,13 @@ def pick_cma_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         "limit": 40,
     }
     print("Requesting CMA search with params:", params)
-    r = requests.get(CMA_SEARCH_URL, params=params, timeout=30)
-    r.raise_for_status()
-    objs = r.json().get("data",[]) or []
+    try:
+        r = requests.get(CMA_SEARCH_URL, params=params, timeout=30)
+        r.raise_for_status()
+        objs = r.json().get("data",[]) or []
+    except Exception as e:
+        print(f"CMA API error: {e}")
+        return None
     print(f"CMA search returned {len(objs)} objects")
     random.shuffle(objs)
     for obj in objs:
@@ -172,7 +180,7 @@ def pick_cma_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
 
 def pick_cooperhewitt_tomato(seen_ids):
     """
-    Uses Cooper Hewitt’s public JSON search (same used by the website).
+    Uses Cooper Hewitt's public JSON search (same used by the website).
     """
     url = "https://collection.cooperhewitt.org/search/"
     params = {
@@ -182,12 +190,11 @@ def pick_cooperhewitt_tomato(seen_ids):
     }
 
     print("Requesting Cooper Hewitt WEBSITE JSON search for tomato…")
-    r = requests.get(url, params=params, timeout=30)
-
     try:
+        r = requests.get(url, params=params, timeout=30)
         data = r.json()
-    except Exception:
-        print("Cooper Hewitt returned non-JSON:", r.text[:200])
+    except Exception as e:
+        print(f"Cooper Hewitt API error: {e}")
         return None
 
     # Correct key: "objects"
