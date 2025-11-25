@@ -101,8 +101,6 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         params = {
             "q": term,
             "hasImages": "true",
-            "title": "true",
-            "tags": "true",
         }
         print(f"Requesting Met search for '{term}'...")
         try:
@@ -123,10 +121,26 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
         if key in seen:
             continue
         print("Considering Met object:", oid)
-        r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
-        r2.raise_for_status()
-        obj = r2.json()
+        try:
+            r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
+            r2.raise_for_status()
+            obj = r2.json()
+        except Exception:
+            continue
+
         if not obj.get("isPublicDomain"):
+            continue
+
+        # Validate that this is actually tomato-related by checking key fields
+        title = (obj.get("title") or "").lower()
+        tags = " ".join(obj.get("tags") or []).lower()
+        medium = (obj.get("medium") or "").lower()
+        object_name = (obj.get("objectName") or "").lower()
+
+        # Check if tomato appears in any relevant field
+        searchable_text = f"{title} {tags} {medium} {object_name}"
+        if not any(term in searchable_text for term in ["tomato", "lycopersicon"]):
+            print(f"  Skipping - no tomato in key fields")
             continue
         img = obj.get("primaryImageSmall") or obj.get("primaryImage")
         if not img:
