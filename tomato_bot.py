@@ -93,24 +93,30 @@ def post_to_bluesky(text: str, image_url: Optional[str]) -> None:
 # --- Museum pickers ---
 
 def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
-    params = {
-        "q": "tomato",
-        "hasImages": "true",
-        "title": "true",
-        "tags": "true",
-    }
-    print("Requesting Met search with params:", params)
-    try:
-        r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        print(f"Met API error: {e}")
-        return None
-    ids = data.get("objectIDs") or []
-    print(f"Met search returned {len(ids)} IDs")
-    random.shuffle(ids)
-    for oid in ids:
+    # Try multiple search terms to find more results
+    search_terms = ["tomato", "tomatoes", "lycopersicon"]
+    all_ids = []
+
+    for term in search_terms:
+        params = {
+            "q": term,
+            "hasImages": "true",
+        }
+        print(f"Requesting Met search for '{term}'...")
+        try:
+            r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            ids = data.get("objectIDs") or []
+            all_ids.extend(ids)
+            print(f"  Found {len(ids)} IDs for '{term}'")
+        except Exception as e:
+            print(f"  Met API error for '{term}': {e}")
+
+    all_ids = list(set(all_ids))  # Remove duplicates
+    print(f"Total Met IDs after dedup: {len(all_ids)}")
+    random.shuffle(all_ids)
+    for oid in all_ids:
         key = f"met:{oid}"
         if key in seen:
             continue
@@ -139,23 +145,39 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
     return None
 
 def pick_cma_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
-    params = {
-        "q": "tomato",
-        "has_image": 1,
-        "cc0": 1,
-        "limit": 40,
-    }
-    print("Requesting CMA search with params:", params)
-    try:
-        r = requests.get(CMA_SEARCH_URL, params=params, timeout=30)
-        r.raise_for_status()
-        objs = r.json().get("data",[]) or []
-    except Exception as e:
-        print(f"CMA API error: {e}")
-        return None
-    print(f"CMA search returned {len(objs)} objects")
-    random.shuffle(objs)
-    for obj in objs:
+    # Try multiple search terms
+    search_terms = ["tomato", "tomatoes"]
+    all_objs = []
+
+    for term in search_terms:
+        params = {
+            "q": term,
+            "has_image": 1,
+            "cc0": 1,
+            "limit": 100,
+        }
+        print(f"Requesting CMA search for '{term}'...")
+        try:
+            r = requests.get(CMA_SEARCH_URL, params=params, timeout=30)
+            r.raise_for_status()
+            objs = r.json().get("data",[]) or []
+            all_objs.extend(objs)
+            print(f"  Found {len(objs)} objects for '{term}'")
+        except Exception as e:
+            print(f"  CMA API error for '{term}': {e}")
+
+    # Remove duplicates based on ID
+    seen_obj_ids = set()
+    unique_objs = []
+    for obj in all_objs:
+        obj_id = obj.get("id")
+        if obj_id not in seen_obj_ids:
+            seen_obj_ids.add(obj_id)
+            unique_objs.append(obj)
+
+    print(f"Total CMA objects after dedup: {len(unique_objs)}")
+    random.shuffle(unique_objs)
+    for obj in unique_objs:
         oid = str(obj.get("id"))
         key = f"cma:{oid}"
         if key in seen:
@@ -183,22 +205,39 @@ def pick_cooperhewitt_tomato(seen_ids):
     Uses Cooper Hewitt's public JSON search (same used by the website).
     """
     url = "https://collection.cooperhewitt.org/search/"
-    params = {
-        "q": "tomato",
-        "format": "json",
-        "with_images": "1",
-    }
 
-    print("Requesting Cooper Hewitt WEBSITE JSON search for tomato…")
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        data = r.json()
-    except Exception as e:
-        print(f"Cooper Hewitt API error: {e}")
-        return None
+    # Try multiple search terms
+    search_terms = ["tomato", "tomatoes"]
+    all_objs = []
 
-    # Correct key: "objects"
-    objs = data.get("objects", [])
+    for term in search_terms:
+        params = {
+            "q": term,
+            "format": "json",
+            "with_images": "1",
+        }
+
+        print(f"Requesting Cooper Hewitt search for '{term}'...")
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            data = r.json()
+            objs = data.get("objects", [])
+            all_objs.extend(objs)
+            print(f"  Found {len(objs)} objects for '{term}'")
+        except Exception as e:
+            print(f"  Cooper Hewitt API error for '{term}': {e}")
+
+    # Remove duplicates based on ID
+    seen_obj_ids = set()
+    unique_objs = []
+    for obj in all_objs:
+        obj_id = obj.get("id")
+        if obj_id not in seen_obj_ids:
+            seen_obj_ids.add(obj_id)
+            unique_objs.append(obj)
+
+    print(f"Total Cooper Hewitt objects after dedup: {len(unique_objs)}")
+    objs = unique_objs
     if not objs:
         print("No Cooper Hewitt objects found.")
         return None
