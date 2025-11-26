@@ -133,7 +133,9 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
 
         # Validate that this is actually tomato-related by checking key fields
         title = (obj.get("title") or "").lower()
-        tags = " ".join(obj.get("tags") or []).lower()
+        # Tags are dict objects with 'term' key
+        tag_list = obj.get("tags") or []
+        tags = " ".join([tag.get("term", "") for tag in tag_list if isinstance(tag, dict)]).lower()
         medium = (obj.get("medium") or "").lower()
         object_name = (obj.get("objectName") or "").lower()
 
