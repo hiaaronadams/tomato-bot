@@ -140,22 +140,17 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
             print(f"  Skipping - no image")
             continue
 
-        # Validate that this is actually tomato-related by checking key fields
-        title = (obj.get("title") or "").lower()
-        # Tags are dict objects with 'term' key
-        tag_list = obj.get("tags") or []
-        tags = " ".join([tag.get("term", "") for tag in tag_list if isinstance(tag, dict)]).lower()
-        medium = (obj.get("medium") or "").lower()
-        object_name = (obj.get("objectName") or "").lower()
-        classification = (obj.get("classification") or "").lower()
+        # Basic validation: just check it's not obviously unrelated
+        # Trust the Met's search mostly - they matched it for a reason
+        title_str = obj.get("title", "Untitled")
 
-        # Check if tomato appears in any relevant field
-        searchable_text = f"{title} {tags} {medium} {object_name} {classification}"
-        if not any(term in searchable_text for term in ["tomato", "lycopersicon"]):
-            print(f"  Skipping {oid} - '{title[:50]}' - no tomato in validated fields")
+        # Skip known false positives
+        false_positive_titles = ["charity", "madonna", "virgin", "saint"]
+        if any(fp in title_str.lower() for fp in false_positive_titles):
+            print(f"  Skipping {oid} - '{title_str[:50]}' - likely false positive")
             continue
 
-        print(f"  ✓ Found valid tomato artwork: {title[:50]}")
+        print(f"  ✓ Selected Met tomato: {title_str[:50]}")
         title = obj.get("title", "Untitled")
         artist = obj.get("artistDisplayName","")
         date = obj.get("objectDate","")
