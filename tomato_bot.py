@@ -96,25 +96,32 @@ def post_to_bluesky(text: str, image_url: Optional[str]) -> None:
 # --- Museum pickers ---
 
 def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
-    # Try multiple search terms to find more results
-    search_terms = ["tomato", "tomatoes", "lycopersicon"]
+    """
+    Scrape Met website search results and use API for details
+    """
+    search_terms = ["tomato", "tomatoes"]
     all_ids = []
 
     for term in search_terms:
-        params = {
-            "q": term,
-            "hasImages": "true",
-        }
-        print(f"Requesting Met search for '{term}'...")
+        print(f"Scraping Met website search for '{term}'...")
         try:
-            r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
+            # Scrape the web search page
+            search_url = f"https://www.metmuseum.org/art/collection/search?q={term}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            r = requests.get(search_url, headers=headers, timeout=30)
             r.raise_for_status()
-            data = r.json()
-            ids = data.get("objectIDs") or []
+
+            # Extract object IDs from the HTML
+            # Object URLs look like: /art/collection/search/436838
+            import re
+            ids = re.findall(r'/art/collection/search/(\d+)', r.text)
+            ids = [int(id) for id in ids]
             all_ids.extend(ids)
-            print(f"  Found {len(ids)} IDs for '{term}'")
+            print(f"  Found {len(ids)} IDs from web search for '{term}'")
         except Exception as e:
-            print(f"  Met API error for '{term}': {e}")
+            print(f"  Met web scrape error for '{term}': {e}")
 
     all_ids = list(set(all_ids))  # Remove duplicates
     print(f"Total Met IDs after dedup: {len(all_ids)}")
@@ -128,29 +135,18 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
             r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
             r2.raise_for_status()
             obj = r2.json()
-        except Exception:
-            continue
-
-        if not obj.get("isPublicDomain"):
-            print(f"  Skipping - not public domain")
+        except Exception as e:
+            print(f"  API error for {oid}: {e}")
             continue
 
         img = obj.get("primaryImageSmall") or obj.get("primaryImage")
         if not img:
-            print(f"  Skipping - no image")
+            print(f"  Skipping {oid} - no image")
             continue
 
-        # Basic validation: just check it's not obviously unrelated
-        # Trust the Met's search mostly - they matched it for a reason
+        # If it's on Met's website, we can use it
         title_str = obj.get("title", "Untitled")
-
-        # Skip known false positives
-        false_positive_titles = ["charity", "madonna", "virgin", "saint"]
-        if any(fp in title_str.lower() for fp in false_positive_titles):
-            print(f"  Skipping {oid} - '{title_str[:50]}' - likely false positive")
-            continue
-
-        print(f"  ✓ Selected Met tomato: {title_str[:50]}")
+        print(f"  ✓ Selected Met artwork: {title_str[:50]}")
         title = obj.get("title", "Untitled")
         artist = obj.get("artistDisplayName","")
         date = obj.get("objectDate","")
