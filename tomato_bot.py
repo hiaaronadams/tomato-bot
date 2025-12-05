@@ -22,9 +22,12 @@ BSKY_APP_PASSWORD = os.getenv("BSKY_APP_PASSWORD")
 MET_SEARCH_URL = "https://collectionapi.metmuseum.org/public/collection/v1/search"
 MET_OBJECT_URL = "https://collectionapi.metmuseum.org/public/collection/v1/objects"
 CMA_SEARCH_URL = "https://openaccess-api.clevelandart.org/api/artworks"
+SMITHSONIAN_SEARCH_URL = "https://api.si.edu/openaccess/api/v1.0/search"
 
 # Cooper Hewitt website search JSON endpoint
 CH_SEARCH_URL = "https://collection.cooperhewitt.org/search/objects/"  # but DO add &format=json in params.
+
+SMITH_API_KEY = os.getenv("SMITH_API_KEY")
 
 SEEN_IDS_PATH = "posted_ids.json"
 MAX_TEXT_LEN = 300
@@ -93,25 +96,32 @@ def post_to_bluesky(text: str, image_url: Optional[str]) -> None:
 # --- Museum pickers ---
 
 def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
-    # Try multiple search terms to find more results
-    search_terms = ["tomato", "tomatoes", "lycopersicon"]
+    """
+    Scrape Met website search results and use API for details
+    """
+    search_terms = ["tomato", "tomatoes"]
     all_ids = []
 
     for term in search_terms:
-        params = {
-            "q": term,
-            "hasImages": "true",
-        }
-        print(f"Requesting Met search for '{term}'...")
+        print(f"Scraping Met website search for '{term}'...")
         try:
-            r = requests.get(MET_SEARCH_URL, params=params, timeout=30)
+            # Scrape the web search page
+            search_url = f"https://www.metmuseum.org/art/collection/search?q={term}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            r = requests.get(search_url, headers=headers, timeout=30)
             r.raise_for_status()
-            data = r.json()
-            ids = data.get("objectIDs") or []
+
+            # Extract object IDs from the HTML
+            # Object URLs look like: /art/collection/search/436838
+            import re
+            ids = re.findall(r'/art/collection/search/(\d+)', r.text)
+            ids = [int(id) for id in ids]
             all_ids.extend(ids)
-            print(f"  Found {len(ids)} IDs for '{term}'")
+            print(f"  Found {len(ids)} IDs from web search for '{term}'")
         except Exception as e:
-            print(f"  Met API error for '{term}': {e}")
+            print(f"  Met web scrape error for '{term}': {e}")
 
     all_ids = list(set(all_ids))  # Remove duplicates
     print(f"Total Met IDs after dedup: {len(all_ids)}")
@@ -125,28 +135,18 @@ def pick_met_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
             r2 = requests.get(f"{MET_OBJECT_URL}/{oid}", timeout=30)
             r2.raise_for_status()
             obj = r2.json()
-        except Exception:
+        except Exception as e:
+            print(f"  API error for {oid}: {e}")
             continue
 
-        if not obj.get("isPublicDomain"):
-            continue
-
-        # Validate that this is actually tomato-related by checking key fields
-        title = (obj.get("title") or "").lower()
-        # Tags are dict objects with 'term' key
-        tag_list = obj.get("tags") or []
-        tags = " ".join([tag.get("term", "") for tag in tag_list if isinstance(tag, dict)]).lower()
-        medium = (obj.get("medium") or "").lower()
-        object_name = (obj.get("objectName") or "").lower()
-
-        # Check if tomato appears in any relevant field
-        searchable_text = f"{title} {tags} {medium} {object_name}"
-        if not any(term in searchable_text for term in ["tomato", "lycopersicon"]):
-            print(f"  Skipping - no tomato in key fields")
-            continue
         img = obj.get("primaryImageSmall") or obj.get("primaryImage")
         if not img:
+            print(f"  Skipping {oid} - no image")
             continue
+
+        # If it's on Met's website, we can use it
+        title_str = obj.get("title", "Untitled")
+        print(f"  ✓ Selected Met artwork: {title_str[:50]}")
         title = obj.get("title", "Untitled")
         artist = obj.get("artistDisplayName","")
         date = obj.get("objectDate","")
@@ -299,6 +299,86 @@ def pick_cooperhewitt_tomato(seen_ids):
     print("No suitable Cooper Hewitt item found.")
     return None
 
+def pick_smithsonian_tomato(seen: Set[str]) -> Optional[Tuple[str, str, str]]:
+    """
+    Search Smithsonian Open Access API for tomato artwork
+    """
+    if not SMITH_API_KEY:
+        print("No Smithsonian API key configured")
+        return None
+
+    search_terms = ["tomato", "tomatoes"]
+    all_rows = []
+
+    for term in search_terms:
+        params = {
+            "q": term,
+            "api_key": SMITH_API_KEY,
+            "rows": 100,
+        }
+        print(f"Requesting Smithsonian search for '{term}'...")
+        try:
+            r = requests.get(SMITHSONIAN_SEARCH_URL, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            rows = data.get("response", {}).get("rows", [])
+            all_rows.extend(rows)
+            print(f"  Found {len(rows)} objects for '{term}'")
+        except Exception as e:
+            print(f"  Smithsonian API error for '{term}': {e}")
+
+    # Remove duplicates based on ID
+    seen_obj_ids = set()
+    unique_objs = []
+    for obj in all_rows:
+        obj_id = obj.get("id")
+        if obj_id not in seen_obj_ids:
+            seen_obj_ids.add(obj_id)
+            unique_objs.append(obj)
+
+    print(f"Total Smithsonian objects after dedup: {len(unique_objs)}")
+    random.shuffle(unique_objs)
+
+    for obj in unique_objs:
+        oid = str(obj.get("id", ""))
+        key = f"smithsonian:{oid}"
+
+        if key in seen:
+            continue
+
+        # Get image
+        content = obj.get("content", {})
+        descriptive_non_repeating = content.get("descriptiveNonRepeating", {})
+        online_media = descriptive_non_repeating.get("online_media", {})
+        media_list = online_media.get("media", [])
+
+        img_url = None
+        for media in media_list:
+            if media.get("type") == "Images":
+                resources = media.get("resources", [])
+                if resources:
+                    img_url = resources[0].get("url")
+                    break
+
+        if not img_url:
+            continue
+
+        # Get metadata
+        title = obj.get("title", "Untitled")
+        unit_code = obj.get("unitCode", "")
+        date = content.get("freetext", {}).get("date", [{}])[0].get("content", "")
+
+        lines = [title]
+        if date:
+            lines.append(date)
+        lines.append(f"Source: Smithsonian Institution ({unit_code})")
+
+        caption = "\n".join(lines)
+        print(f"  ✓ Selected Smithsonian tomato: {title[:50]}")
+        return caption, img_url, key
+
+    print("No suitable Smithsonian item found.")
+    return None
 
 
 # --------------------------------------------------
@@ -309,9 +389,10 @@ def main():
     seen = load_seen_ids()
     print(f"Loaded {len(seen)} previous posted IDs.")
     pickers = [
-        ("Cooper Hewitt", pick_cooperhewitt_tomato),
-        ("Cleveland Museum of Art", pick_cma_tomato),
+        ("Smithsonian", pick_smithsonian_tomato),
         ("The Met", pick_met_tomato),
+        ("Cleveland Museum of Art", pick_cma_tomato),
+        ("Cooper Hewitt", pick_cooperhewitt_tomato),
     ]
 
     random.shuffle(pickers)
